@@ -1,0 +1,3 @@
+C:/Users/Ati/CLionProjects/IDE_CMorgh/cmake-build-debug/CMakeFiles/IDE_CMorgh.dir
+C:/Users/Ati/CLionProjects/IDE_CMorgh/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/Ati/CLionProjects/IDE_CMorgh/cmake-build-debug/CMakeFiles/rebuild_cache.dir
