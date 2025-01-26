@@ -6,25 +6,6 @@
 #include <cstring>
 #include <map>
 using namespace std;
-<<<<<<< HEAD
-=======
-
-
-
-
-
-
-
-// salam Parsa -> Mehrshad
-
-
-
-
-
-
-
-
->>>>>>> a0a8fd703a3476a2b70bc7183e388d1e74e43d9e
 // Screen dimensions
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
