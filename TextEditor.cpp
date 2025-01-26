@@ -1,14 +1,11 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <string>
-#include <sstream>
 #include <iostream>
 #include <vector>
 #include <cstring>
 #include <map>
-
 using namespace std;
-
 // Screen dimensions
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
@@ -32,17 +29,6 @@ void ensureLastLineVisible(int currentLine, int &scrollOffset, int SCREEN_HEIGHT
     }
 }
 
-//void SyntaxHighlighting(SDL_Renderer* renderer, TTF_Font* font, const string& line, int x, int y)
-//{
-//    int firstX = x;
-//    string word;
-//    istringstream stream(line);
-//    while (stream >> word)
-//    {
-//        string trimmed word
-//    }
-//}
-
 // Define colors for Light Mode and Dark Mode
 SDL_Color lightBackgroundColor = {255, 255, 255, 255};  // White for Light Mode
 SDL_Color lightTextColor = {0, 0, 0, 255};  // Black for Light Mode
@@ -50,14 +36,16 @@ SDL_Color darkBackgroundColor = {0, 0, 0, 255};  // Black for Dark Mode
 SDL_Color darkTextColor = {255, 255, 255, 255};  // White for Dark Mode
 
 bool isDarkMode = false;  // Default mode: Light Mode
-
+/// text color
+map < string,SDL_Color > keywords ={
+        {"while",{0,51,102}},
+        {"int",{0,128,128}}};
 int main(int argc, char* argv[]) {
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
         return -1;
     }
-
 
     // Initialize SDL_ttf
     if (TTF_Init() == -1) {
@@ -91,7 +79,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Load font
-    TTF_Font *font = TTF_OpenFont(R"(C:\Windows\Fonts\Calibri.ttf)", 24); // Replace with the path to your .ttf font
+    TTF_Font *font = TTF_OpenFont(R"(C:\Windows\Fonts\Calibri.ttf)", 18); // Replace with the path to your .ttf font
     if (!font) {
         std::cerr << "Failed to load font! TTF_Error: " << TTF_GetError() << std::endl;
         SDL_DestroyRenderer(renderer);
@@ -112,6 +100,15 @@ int main(int argc, char* argv[]) {
     std::string viewText = "View";
     std::string lightModeText = "Light Mode";
     std::string darkModeText = "Dark Mode";
+    // Button text for "Edit" and menu options
+    std::string editText = "Edit";
+    std::string undoText = "Undo";
+    std::string redoText = "Redo";
+    // Button text for "File" and menu options
+    std::string FileText = "File";
+    std::string NewText = "New";
+    std::string SaveText = "Save";
+    string exitText = "Exit";
 
     // Timer for cursor blinking
     Uint32 lastCursorToggle = SDL_GetTicks();
@@ -236,6 +233,7 @@ int main(int argc, char* argv[]) {
         } else {
             SDL_SetRenderDrawColor(renderer, lightBackgroundColor.r, lightBackgroundColor.g, lightBackgroundColor.b, 255);
             textColor = lightTextColor;
+
         }
 
         SDL_RenderClear(renderer);  // Clear the screen
@@ -243,11 +241,24 @@ int main(int argc, char* argv[]) {
         // Render the "View" button
         SDL_Surface *viewSurface = TTF_RenderText_Blended(font, viewText.c_str(), textColor);
         SDL_Texture *viewTexture = SDL_CreateTextureFromSurface(renderer, viewSurface);
-        SDL_Rect viewRect = {10, 10, viewSurface->w, viewSurface->h};
+        SDL_Rect viewRect = {60, 10, viewSurface->w, viewSurface->h};
         SDL_RenderCopy(renderer, viewTexture, nullptr, &viewRect);
         SDL_FreeSurface(viewSurface);
         SDL_DestroyTexture(viewTexture);
-
+        // Render the "File" button
+        SDL_Surface *fileSurface = TTF_RenderText_Blended(font, FileText.c_str(), textColor);
+        SDL_Texture *fileTexture = SDL_CreateTextureFromSurface(renderer, fileSurface);
+        SDL_Rect fileRect = {10, 10, fileSurface->w, fileSurface->h};
+        SDL_RenderCopy(renderer, fileTexture, nullptr, &fileRect);
+        SDL_FreeSurface(fileSurface);
+        SDL_DestroyTexture(fileTexture);
+        // Render the "File" button
+        SDL_Surface *editSurface = TTF_RenderText_Blended(font, editText.c_str(), textColor);
+        SDL_Texture *editTexture = SDL_CreateTextureFromSurface(renderer, editSurface);
+        SDL_Rect editRect = {110, 10, editSurface->w, editSurface->h};
+        SDL_RenderCopy(renderer, editTexture, nullptr, &editRect);
+        SDL_FreeSurface(editSurface);
+        SDL_DestroyTexture(editTexture);
         int y = 50-scrollOffset; // Start rendering based on the scroll offset
 
         for (size_t i = 0; i < lines.size(); ++i) {
