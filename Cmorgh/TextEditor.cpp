@@ -39,7 +39,7 @@ bool isDarkMode = false;  // Default mode: Light Mode
 /// text color
 map < string,SDL_Color > keywords ={
         {"while",{0,51,102}},
-{"int",{0,128,128}}};
+        {"int",{0,128,128}}};
 int main(int argc, char* argv[]) {
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
