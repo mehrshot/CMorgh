@@ -1,14 +1,25 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL2_gfx.h>
+#include <SDL2/SDL2_gfxPrimitives.h>
 #include <string>
 #include <iostream>
 #include <vector>
 #include <cstring>
 #include <map>
+#include <set>
+#include <regex>
+#include <algorithm>
+#include <unordered_set>
+
 using namespace std;
+
 // Screen dimensions
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 600;
+const int SCREEN_WIDTH = 1920;
+const int SCREEN_HEIGHT = 960;
+const int ERROR_PANEL_HEIGHT = 200;  // Height of the error panel at the bottom
+
+
 // Ensure the current line is visible when adding new lines or moving the cursor
 void ensureLastLineVisible(int currentLine, int &scrollOffset, int SCREEN_HEIGHT, int LINE_HEIGHT, int totalLines) {
     int cursorY = currentLine * LINE_HEIGHT - scrollOffset;
@@ -23,33 +34,285 @@ void ensureLastLineVisible(int currentLine, int &scrollOffset, int SCREEN_HEIGHT
     // Ensure last line is always visible
     int contentHeight = totalLines * LINE_HEIGHT;
     if (contentHeight > SCREEN_HEIGHT) {
-        scrollOffset = std::min(scrollOffset, contentHeight - SCREEN_HEIGHT);
+        scrollOffset = min(scrollOffset, contentHeight - SCREEN_HEIGHT);
     } else {
         scrollOffset = 0; // No scrolling needed if content fits
     }
 }
 
 // Define colors for Light Mode and Dark Mode
-SDL_Color lightBackgroundColor = {255, 255, 255, 255};  // White for Light Mode
-SDL_Color lightTextColor = {0, 0, 0, 255};  // Black for Light Mode
-SDL_Color darkBackgroundColor = {0, 0, 0, 255};  // Black for Dark Mode
-SDL_Color darkTextColor = {255, 255, 255, 255};  // White for Dark Mode
+SDL_Color lightBackgroundColor = {220, 220, 220, 255};  // White
+SDL_Color lightTextColor       = {0, 0, 0, 255};        // Black
+SDL_Color darkBackgroundColor  = {20, 20, 20, 255};        // Black
+SDL_Color darkTextColor        = {255, 255, 255, 255};  // White
+
+
+//----------------------
+//Syntax Highlighting
+//----------------------
+
+// Light Mode colors
+map<string, SDL_Color> lightModeColors = {
+        {"keyword", {0, 51, 102, 255}},      // Dark Blue
+        {"datatype", {0, 128, 128, 255}},   // Teal
+        {"function", {255, 140, 0, 255}},   // Dark Orange
+        {"variable", {139, 0, 0, 255}},     // Dark Red
+        {"string", {0, 100, 0, 255}},       // Dark Green
+        {"char", {128, 0, 128, 255}},       // Purple
+        {"number", {128, 128, 128, 255}},   // Gray
+        {"comment", {0, 139, 139, 255}},    // Turquoise Blue
+        {"preprocessor", {128, 0, 0, 255}}, // Maroon
+        {"operator", {184, 134, 11, 255}},  // Dark Goldenrod
+        {"bracket", {184, 134, 11, 255}},   // Dark Goldenrod
+        {"normal", {0, 0, 0, 255}}
+};
+
+// Dark Mode colors
+map<string, SDL_Color> darkModeColors = {
+        {"keyword", {198, 120, 221, 255}},  // Purple
+        {"datatype", {224, 108, 117, 255}}, // Red
+        {"function", {97, 175, 254, 255}},  // Light Blue
+        {"variable", {229, 192, 123, 255}}, // Yellow
+        {"string", {152, 195, 121, 255}},   // Green
+        {"char", {152, 195, 121, 255}},     // Green
+        {"number", {209, 154, 102, 255}},   // Orange
+        {"comment", {92, 99, 112, 255}},    // Gray
+        {"preprocessor", {86, 182, 194, 255}}, // Cyan
+        {"operator", {213, 94, 0, 255}},    // Dark Orange
+        {"bracket", {171, 178, 191, 255}},   // Light Gray
+        {"normal", {255, 255, 255, 255}}
+};
 
 bool isDarkMode = false;  // Default mode: Light Mode
-/// text color
-map < string,SDL_Color > keywords ={
-        {"while",{0,51,102}},
-        {"int",{0,128,128}}};
+map<string, SDL_Color>& getCurrentColors() {
+    if (isDarkMode) {
+        return darkModeColors;
+    } else {
+        return lightModeColors;
+    }
+}
+
+unordered_set <string> operators ={"+","-","*","/","%","="};
+
+SDL_Color applyHighlightColor(const string& word, bool &comment) {
+    regex keywordRegex("\\b(if|else|while|for|switch|case|return|class|struct|namespace|using)\\b");
+    if (regex_match(word, keywordRegex)) {
+        return getCurrentColors()["keyword"];
+    }
+
+    regex datatypeRegex("\\b(int|float|double|char|bool|void|string)\\b");
+    if (regex_match(word, datatypeRegex)) {
+        return getCurrentColors()["datatype"];
+    }
+
+    regex functionRegex("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(");
+    if (regex_match(word, functionRegex)) {
+        return getCurrentColors()["function"];
+    }
+
+    regex stringRegex("\"([^\"]*)\"");  // Match strings
+    if (regex_match(word, stringRegex)) {
+        return getCurrentColors()["string"];
+    }
+
+    regex numberRegex("\\b\\d+(\\.\\d+)?\\b");
+    if (regex_match(word, numberRegex)) {
+        return getCurrentColors()["number"];
+    }
+
+    regex commentRegex("//.*");  // Match comments
+    if (regex_match(word, commentRegex)) {
+        comment = true;
+        return getCurrentColors()["comment"];
+    }
+
+    if(operators.find(word) != operators.end())
+    {
+        return getCurrentColors()["operator"];
+    }
+
+    regex bracketRegex("[\\[\\](){}]");
+    if (regex_match(word, bracketRegex)) {
+        return getCurrentColors()["bracket"];
+    }
+
+    return getCurrentColors()["normal"];
+}
+
+int getSpaceWidth(TTF_Font* codefont) {
+    int spaceWidth;
+    TTF_SizeText(codefont, " ", &spaceWidth, nullptr);
+    return spaceWidth;
+}
+
+
+//----------------------------
+//Poshtibani az ketabkhaneha
+//----------------------------
+
+map<string, vector<string>> libraryFunctions = {
+        {"<iostream>", {"cout", "cin", "endl", "getline"}},
+        {"<cmath>", {"sqrt", "pow", "sin", "cos", "tan", "abs", "log", "exp", "log10", "floor", "ceil"}},
+        {"<vector>", {"vector", "push_back", "pop_back", "size"}},
+        {"<algorithm>", {"sort", "max_element", "min_element", "reverse"}},
+        {"<map>", {"map", "insert", "erase", "find", "size"}},
+        {"<set>", {"set", "insert", "erase", "find", "size"}},
+        {"<fstream>", {"ofstream", "ifstream", "open", "close"}},
+};
+
+vector <string> extractIncludedLibraries(const string &code) {
+    vector <string> includedLibraries;
+    regex includeRegex("#include\\s*<([^>]+)>");
+    smatch match;
+    string remainingCode = code;
+    while (regex_search(remainingCode, match, includeRegex)) {
+        includedLibraries.push_back("<" + match[1].str() + ">"); // Add the library in angle brackets
+        remainingCode = match.suffix().str();
+    }
+    return includedLibraries;
+}
+
+
+vector <string> getAvailableFunctions(const vector<string> &includedLibraries) {
+    vector <string> availableFunctions;
+    for (const auto &lib: includedLibraries)
+    {
+        if (libraryFunctions.find(lib) != libraryFunctions.end()) {
+            availableFunctions.insert(availableFunctions.end(),
+                                      libraryFunctions[lib].begin(),
+                                      libraryFunctions[lib].end());
+        }
+    }
+    return availableFunctions;
+}
+
+void updateFunctionList(const string& code, vector<string>& currentIncludes, vector<string>& availableFunctions) {
+    vector<string> newIncludes = extractIncludedLibraries(code);  // Extract updated include libraries
+
+    // Find newly added includes
+    for (const auto& lib : newIncludes) {
+        if (find(currentIncludes.begin(), currentIncludes.end(), lib) == currentIncludes.end()) {
+            // If the library was not previously included, add its functions
+            if (libraryFunctions.find(lib) != libraryFunctions.end()) {
+                availableFunctions.insert(availableFunctions.end(),
+                                          libraryFunctions[lib].begin(),
+                                          libraryFunctions[lib].end());
+            }
+        }
+    }
+
+    // Find removed includes
+    for (const auto& oldLib : currentIncludes) {
+        if (find(newIncludes.begin(), newIncludes.end(), oldLib) == newIncludes.end()) {
+            // If the library has been removed, delete its functions from the available list
+            if (libraryFunctions.find(oldLib) != libraryFunctions.end()) {
+                for (const auto& func : libraryFunctions[oldLib]) {
+                    auto it = find(availableFunctions.begin(), availableFunctions.end(), func);
+                    if (it != availableFunctions.end()) {
+                        availableFunctions.erase(it);  // Remove function from the list
+                    }
+                }
+            }
+        }
+    }
+
+    // Update the current list of includes
+    currentIncludes = newIncludes;
+}
+
+bool isLibraryIncluded(const string& functionName, const vector<string>& currentIncludes) {
+    for (const auto& lib : libraryFunctions) {
+        if (find(lib.second.begin(), lib.second.end(), functionName) != lib.second.end()) {
+            // Check if the corresponding library is included in currentIncludes
+            if (find(currentIncludes.begin(), currentIncludes.end(), lib.first) != currentIncludes.end()) {
+                return true; // The corresponding library is included
+            } else {
+                return false; // The corresponding library is not included
+            }
+        }
+    }
+    return true; // If the function is not found, assume no missing library
+}
+
+
+
+vector<string> extractUsedFunctions(const string& code) {
+    vector<string> usedFunctions;
+    regex functionRegex("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("); // Match function names
+    smatch match;
+    string remainingCode = code;
+
+    while (regex_search(remainingCode, match, functionRegex)) {
+        usedFunctions.push_back(match[1].str()); // Extract function name
+        remainingCode = match.suffix().str();    // Move to the next match
+    }
+
+    return usedFunctions;
+}
+
+vector<string> findUndefinedFunctions(const vector<string>& usedFunctions, const vector<string>& availableFunctions) {
+    vector<string> undefinedFunctions;
+
+    for (const auto& func : usedFunctions) {
+        if (find(availableFunctions.begin(), availableFunctions.end(), func) == availableFunctions.end()) {
+            undefinedFunctions.push_back(func); // Function is not in available list
+        }
+    }
+
+    return undefinedFunctions;
+}
+
+vector<string> suggestMissingIncludes(const vector<string>& undefinedFunctions) {
+    vector<string> missingIncludes;
+
+    for (const auto& func : undefinedFunctions) {
+        for (const auto& lib : libraryFunctions) {
+            if (find(lib.second.begin(), lib.second.end(), func) != lib.second.end()) {
+                missingIncludes.push_back(lib.first); // Suggest including this library
+                break;
+            }
+        }
+    }
+
+    return missingIncludes;
+}
+
+vector<string> collectedErrors;  // Vector to store the error messages
+// Update the checkCodeErrors function to use isLibraryIncluded
+void checkCodeErrors(const string& code, const vector<string>& availableFunctions, vector<string>& currentIncludes) {
+    vector<string> usedFunctions = extractUsedFunctions(code);
+    vector<string> undefinedFunctions = findUndefinedFunctions(usedFunctions, availableFunctions);
+    vector<string> missingIncludes = suggestMissingIncludes(undefinedFunctions);
+
+    collectedErrors.clear(); // Clear previous errors
+
+    // Check if required libraries are included for each used function
+    for (const auto& func : usedFunctions) {
+        if (!isLibraryIncluded(func, currentIncludes)) {
+            collectedErrors.push_back("Error: Missing include for function '" + func + "'! You need to include the corresponding library.");
+        }
+    }
+
+    // Add missing includes suggestions
+    for (const auto& inc : missingIncludes) {
+        collectedErrors.push_back("Hint: You may need to add `#include " + inc + "` to use these functions.");
+    }
+}
+
+
+
+
+
 int main(int argc, char* argv[]) {
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
+        cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << endl;
         return -1;
     }
 
     // Initialize SDL_ttf
     if (TTF_Init() == -1) {
-        std::cerr << "TTF could not initialize! TTF_Error: " << TTF_GetError() << std::endl;
+        cerr << "TTF could not initialize! TTF_Error: " << TTF_GetError() << endl;
         SDL_Quit();
         return -1;
     }
@@ -62,16 +325,17 @@ int main(int argc, char* argv[]) {
                                           SCREEN_HEIGHT,
                                           SDL_WINDOW_SHOWN);
     if (!window) {
-        std::cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+        cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << endl;
         TTF_Quit();
         SDL_Quit();
         return -1;
     }
 
     // Create renderer
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1,
+                                                SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!renderer) {
-        std::cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+        cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << endl;
         SDL_DestroyWindow(window);
         TTF_Quit();
         SDL_Quit();
@@ -79,9 +343,18 @@ int main(int argc, char* argv[]) {
     }
 
     // Load font
-    TTF_Font *font = TTF_OpenFont(R"(C:\Windows\Fonts\Calibri.ttf)", 18); // Replace with the path to your .ttf font
+    TTF_Font *font = TTF_OpenFont(R"(C:\Windows\Fonts\Calibri.ttf)", 18); // adjust path as needed
+    TTF_Font *codefont = TTF_OpenFont(R"(C:\Windows\Fonts\Consola.ttf)", 16);
     if (!font) {
-        std::cerr << "Failed to load font! TTF_Error: " << TTF_GetError() << std::endl;
+        cerr << "Failed to load font! TTF_Error: " << TTF_GetError() << endl;
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        SDL_Quit();
+        return -1;
+    }
+    if (!codefont) {
+        cerr << "Failed to load font! TTF_Error: " << TTF_GetError() << endl;
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         TTF_Quit();
@@ -89,46 +362,73 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    SDL_Color textColor = {0, 0, 0, 255};  // Default text color (black)
-    std::vector<std::string> lines = {""}; // Holds multiple lines of text
-    int currentLine = 0; // Track the current line being edited
-    int cursorPos = 1; // Track the cursor position within the current line
-    int scrollOffset = 0; // Keeps track of scrolling
-    const int LINE_HEIGHT = TTF_FontHeight(font); // Height of each line
+    vector<string> currentIncludes;  // Stores currently included libraries
+    vector<string> availableFunctions;  // Stores available functions from included libraries
 
-    // Button text for "View" and menu options
-    std::string viewText = "View";
-    std::string lightModeText = "Light Mode";
-    std::string darkModeText = "Dark Mode";
-    // Button text for "Edit" and menu options
-    std::string editText = "Edit";
-    std::string undoText = "Undo";
-    std::string redoText = "Redo";
-    // Button text for "File" and menu options
-    std::string FileText = "File";
-    std::string NewText = "New";
-    std::string SaveText = "Save";
+
+    // Basic editor state
+    SDL_Color textColor = {0, 0, 0, 255};     // default black text
+    vector<string> lines = {""};    // at least one empty line
+    int currentLine = 0;
+    int cursorPos = 1;    // note: your code starts it at 1
+    int scrollOffset = 0;
+    const int LINE_HEIGHT = TTF_FontHeight(font);
+
+    // Menu / UI strings
+    string viewText       = "View";
+    string lightModeText  = "Light Mode";
+    string darkModeText   = "Dark Mode";
+    string newprojectText = "New Project";
+    string saveprojectText = "Save Project";
     string exitText = "Exit";
+    string undoText = "Undo";
+    string redoText = "Redo";
+
+    bool ViewMenuVisible  = false;
+    bool FileMenuVisible  = false;
+    bool EditMenuVisible  = false;
 
     // Timer for cursor blinking
     Uint32 lastCursorToggle = SDL_GetTicks();
-    bool cursorVisible = true;
-    const Uint32 CURSOR_BLINK_INTERVAL = 500; // 500 ms for blinking
+    bool cursorVisible      = true;
+    const Uint32 CURSOR_BLINK_INTERVAL = 500; // ms
     bool quit = false;
     SDL_Event e;
 
-    // Menu visibility flag
-    bool ViewMenuVisible = false;
-
     while (!quit) {
-        // Handle cursor blinking
+        // Clear screen
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderClear(renderer);
+
+        // Render text
+        SDL_Color textColor;
+
+        // Capture the current code from the editor as a single string
+        string currentCode;
+        for (const auto& line : lines) {
+            currentCode += line + "\n";
+        }
+
+        // Update included libraries and available functions
+        updateFunctionList(currentCode, currentIncludes, availableFunctions);
+
+        // Extract functions used in the code
+        vector<string> usedFunctions = extractUsedFunctions(currentCode);
+
+        // Find functions that are used but not defined
+        vector<string> undefinedFunctions = findUndefinedFunctions(usedFunctions, availableFunctions);
+
+        // Suggest missing #include directives
+        vector<string> missingIncludes = suggestMissingIncludes(undefinedFunctions);
+
+
         Uint32 currentTime = SDL_GetTicks();
         if (currentTime > lastCursorToggle + CURSOR_BLINK_INTERVAL) {
             cursorVisible = !cursorVisible;
             lastCursorToggle = currentTime;
         }
 
-        // Event handling loop
+        // Event loop
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) {
                 quit = true;
@@ -141,6 +441,7 @@ int main(int argc, char* argv[]) {
                 }
             } else if (e.type == SDL_KEYDOWN) {
                 if (e.key.keysym.sym == SDLK_BACKSPACE) {
+                    // Ensure cursorPos is within the valid range
                     if (cursorPos > 1 && cursorPos <= lines[currentLine].size()) {
                         // Remove character before cursor
                         lines[currentLine].erase(cursorPos - 1, 1);
@@ -168,10 +469,13 @@ int main(int argc, char* argv[]) {
                         cursorPos = 0;
                         ensureLastLineVisible(currentLine, scrollOffset, SCREEN_HEIGHT, LINE_HEIGHT, lines.size());
                     }
-                } else if (e.key.keysym.sym == SDLK_TAB) {
+                }
+                else if (e.key.keysym.sym == SDLK_TAB) {
+                    // Add spaces for tab
                     lines[currentLine].insert(cursorPos, "    ");
                     cursorPos += 4;
                 } else if (e.key.keysym.sym == SDLK_LEFT) {
+                    // Move cursor left
                     if (cursorPos > 1) {
                         cursorPos--;
                     } else if (currentLine > 0) {
@@ -179,6 +483,7 @@ int main(int argc, char* argv[]) {
                         cursorPos = lines[currentLine].size();
                     }
                 } else if (e.key.keysym.sym == SDLK_RIGHT) {
+                    // Move cursor right
                     if (cursorPos < lines[currentLine].size()) {
                         cursorPos++;
                     } else if (currentLine < lines.size() - 1) {
@@ -186,39 +491,50 @@ int main(int argc, char* argv[]) {
                         cursorPos = 0;
                     }
                 } else if (e.key.keysym.sym == SDLK_UP) {
+                    // Move cursor up
                     if (currentLine > 0) {
                         currentLine--;
-                        cursorPos = std::min(cursorPos, (int) lines[currentLine].size());
+                        cursorPos = std::min(cursorPos, (int)lines[currentLine].size());
                         ensureLastLineVisible(currentLine, scrollOffset, SCREEN_HEIGHT, LINE_HEIGHT, lines.size());
                     }
                 } else if (e.key.keysym.sym == SDLK_DOWN) {
                     if (currentLine < lines.size() - 1) {
                         currentLine++;
-                        cursorPos = std::min(cursorPos, (int) lines[currentLine].size());
+                        cursorPos = std::min(cursorPos, (int)lines[currentLine].size());
                         ensureLastLineVisible(currentLine, scrollOffset, SCREEN_HEIGHT, LINE_HEIGHT, lines.size());
                     }
                 }
             } else if (e.type == SDL_TEXTINPUT) {
                 if (e.text.text) {
-                    lines[currentLine].insert(cursorPos, e.text.text);
+                    if (e.text.text[0] == ' ')
+                        lines[currentLine].insert(cursorPos, " ");
+                    else
+                        lines[currentLine].insert(cursorPos, e.text.text);
                     cursorPos += strlen(e.text.text);
                     ensureLastLineVisible(currentLine, scrollOffset, SCREEN_HEIGHT, LINE_HEIGHT, lines.size());
                 }
-            } else if (e.type == SDL_MOUSEBUTTONDOWN) {
+            }  else if (e.type == SDL_MOUSEBUTTONDOWN) {
                 int mouseX = e.button.x;
                 int mouseY = e.button.y;
 
-                if (mouseX < 100 && mouseY < 40) {
+                // Click on "View" button region?
+                if (mouseX >= 110 && mouseX <= 110 + 50 && mouseY < 40) {
                     ViewMenuVisible = !ViewMenuVisible;  // Toggle the visibility of the menu
                 }
 
+                //file button
+                if (mouseX >= 10 && mouseX <= 50 && mouseY < 40) {
+                    FileMenuVisible = !FileMenuVisible;  // Toggle the visibility of the menu
+                }
+
+                // If the View menu is open, check clicks on Light/Dark
                 if (ViewMenuVisible) {
-                    if (mouseX > 100 && mouseX < 250) {
+                    if (mouseX > 100 + 50 && mouseX < 250 + 50) {
                         if (mouseY > 40 && mouseY < 80) {
-                            isDarkMode = false;  // Select Light Mode
+                            isDarkMode = false;  // Light Mode
                             ViewMenuVisible = false;
                         } else if (mouseY > 80 && mouseY < 120) {
-                            isDarkMode = true;  // Select Dark Mode
+                            isDarkMode = true;   // Dark Mode
                             ViewMenuVisible = false;
                         }
                     }
@@ -226,90 +542,225 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        Uint8 navarcolor;
         // Set the background color based on the current mode
         if (isDarkMode) {
             SDL_SetRenderDrawColor(renderer, darkBackgroundColor.r, darkBackgroundColor.g, darkBackgroundColor.b, 255);
             textColor = darkTextColor;
+            navarcolor = 50;
         } else {
             SDL_SetRenderDrawColor(renderer, lightBackgroundColor.r, lightBackgroundColor.g, lightBackgroundColor.b, 255);
             textColor = lightTextColor;
-
+            navarcolor = 180;
         }
+        SDL_RenderClear(renderer);
 
-        SDL_RenderClear(renderer);  // Clear the screen
+        //Navare Bala
+        for (int i = 0; i < 35; i++)
+            lineRGBA(renderer, 0, i, SCREEN_WIDTH, i, navarcolor, navarcolor, navarcolor, 255);
 
-        // Render the "View" button
-        SDL_Surface *viewSurface = TTF_RenderText_Blended(font, viewText.c_str(), textColor);
-        SDL_Texture *viewTexture = SDL_CreateTextureFromSurface(renderer, viewSurface);
-        SDL_Rect viewRect = {60, 10, viewSurface->w, viewSurface->h};
-        SDL_RenderCopy(renderer, viewTexture, nullptr, &viewRect);
-        SDL_FreeSurface(viewSurface);
-        SDL_DestroyTexture(viewTexture);
-        // Render the "File" button
-        SDL_Surface *fileSurface = TTF_RenderText_Blended(font, FileText.c_str(), textColor);
-        SDL_Texture *fileTexture = SDL_CreateTextureFromSurface(renderer, fileSurface);
-        SDL_Rect fileRect = {10, 10, fileSurface->w, fileSurface->h};
-        SDL_RenderCopy(renderer, fileTexture, nullptr, &fileRect);
-        SDL_FreeSurface(fileSurface);
-        SDL_DestroyTexture(fileTexture);
-        // Render the "File" button
-        SDL_Surface *editSurface = TTF_RenderText_Blended(font, editText.c_str(), textColor);
-        SDL_Texture *editTexture = SDL_CreateTextureFromSurface(renderer, editSurface);
-        SDL_Rect editRect = {110, 10, editSurface->w, editSurface->h};
-        SDL_RenderCopy(renderer, editTexture, nullptr, &editRect);
-        SDL_FreeSurface(editSurface);
-        SDL_DestroyTexture(editTexture);
-        int y = 50-scrollOffset; // Start rendering based on the scroll offset
+
+        int y = -scrollOffset + 50; // Start rendering based on the scroll offset
 
         for (size_t i = 0; i < lines.size(); ++i) {
+            bool comment = false;
             if (y + LINE_HEIGHT > 0 && y < SCREEN_HEIGHT) { // Render only visible lines
                 if (lines[i].empty()) {
                     lines[i] = " "; // Show cursor on the current line
                 }
-                SDL_Surface *textSurface = TTF_RenderText_Blended(font, lines[i].c_str(), textColor);
-                SDL_Texture *textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
 
-                int textWidth = textSurface->w;
-                int textHeight = textSurface->h;
-                SDL_Rect renderQuad = {10, y, textWidth, textHeight};
+                // Split line into words
+                vector<string> words;
+                stringstream ss(lines[i]);
+                string word;
+                while (ss >> word) {
+                    words.push_back(word);
+                }
 
-                SDL_FreeSurface(textSurface);
+                int currentX = 250;  // Starting position for text rendering
 
-                SDL_RenderCopy(renderer, textTexture, nullptr, &renderQuad);
-                SDL_DestroyTexture(textTexture);
+                // Render each word with its corresponding color
+                for (const string& word : words) {
+                    SDL_Color syntaxColor = applyHighlightColor(word, comment); // Get color based on word type
 
-                // Render cursor if this is the current line
-                if (i == currentLine && cursorVisible) {
+                    if (comment) syntaxColor = getCurrentColors()["comment"];
+
+                    // Render the word
+                    SDL_Surface* textSurface = TTF_RenderText_Blended(codefont, word.c_str(), syntaxColor);
+                    SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+
+                    int textWidth = textSurface->w;
+                    int textHeight = textSurface->h;
+                    SDL_Rect renderQuad = {currentX, y, textWidth, textHeight};
+
+                    SDL_FreeSurface(textSurface);
+
+                    SDL_RenderCopy(renderer, textTexture, nullptr, &renderQuad);
+                    SDL_DestroyTexture(textTexture);
+
+                    currentX += textWidth + getSpaceWidth(codefont);  // Move the x-coordinate for the next word
+                }
+
+                // Render the cursor if this is the current line
+                if (i == currentLine) {
                     int cursorX = 0;
                     if (cursorPos > 0) {
-                        TTF_SizeText(font, lines[i].substr(0, cursorPos).c_str(), &cursorX, nullptr);
+                        TTF_SizeText(codefont, lines[i].substr(0, cursorPos).c_str(), &cursorX, nullptr);
                     }
-                    cursorX += 10; // Add padding for the left margin
-                    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                    if (i == 0){
+                        cursorX += 240;
+                    }
+                    else
+                        cursorX += 250;
+
+                    if (!isDarkMode)
+                        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                    else
+                        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
                     SDL_RenderDrawLine(renderer, cursorX, y, cursorX, y + LINE_HEIGHT);
                 }
             }
             y += LINE_HEIGHT; // Move to the next line
-
-            // If the menu is visible, render the menu options
-            if (ViewMenuVisible) {
-                // Render Light Mode option
-                SDL_Surface *lightModeSurface = TTF_RenderText_Blended(font, lightModeText.c_str(), textColor);
-                SDL_Texture *lightModeTexture = SDL_CreateTextureFromSurface(renderer, lightModeSurface);
-                SDL_Rect lightModeRect = {100, 40, lightModeSurface->w, lightModeSurface->h};
-                SDL_RenderCopy(renderer, lightModeTexture, nullptr, &lightModeRect);
-                SDL_FreeSurface(lightModeSurface);
-                SDL_DestroyTexture(lightModeTexture);
-
-                // Render Dark Mode option
-                SDL_Surface *darkModeSurface = TTF_RenderText_Blended(font, darkModeText.c_str(), textColor);
-                SDL_Texture *darkModeTexture = SDL_CreateTextureFromSurface(renderer, darkModeSurface);
-                SDL_Rect darkModeRect = {100, 80, darkModeSurface->w, darkModeSurface->h};
-                SDL_RenderCopy(renderer, darkModeTexture, nullptr, &darkModeRect);
-                SDL_FreeSurface(darkModeSurface);
-                SDL_DestroyTexture(darkModeTexture);
-            }
         }
+
+        //Nemudar Derakhti Stuff
+        SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);  // Red color for the error panel
+        SDL_Rect ProjectPanel = {0, 35, 200, SCREEN_HEIGHT};
+        SDL_RenderFillRect(renderer, &ProjectPanel);
+
+
+        //-----------------
+        //---Error Panel---
+        //-----------------
+        checkCodeErrors(currentCode, availableFunctions, currentIncludes);
+        SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255);  // Red color for the error panel
+        SDL_Rect errorPanel = {200, SCREEN_HEIGHT - ERROR_PANEL_HEIGHT, SCREEN_WIDTH, ERROR_PANEL_HEIGHT};
+        SDL_RenderFillRect(renderer, &errorPanel);
+        int errorY = SCREEN_HEIGHT - ERROR_PANEL_HEIGHT + 10;
+        SDL_Color errorColor = {150, 0, 0, 255};
+        for (const string &errorMessage: collectedErrors) {
+            // Create a surface and texture for the error message
+            SDL_Surface* errorSurface = TTF_RenderText_Blended(font, errorMessage.c_str(), errorColor);
+            SDL_Texture* errorTexture = SDL_CreateTextureFromSurface(renderer, errorSurface);
+            int textWidth = errorSurface->w;
+            int textHeight = errorSurface->h;
+            SDL_Rect errorRect = {10, errorY, textWidth, textHeight};  // Position the error text
+
+            // Render the error text on the panel
+            SDL_RenderCopy(renderer, errorTexture, nullptr, &errorRect);
+
+            // Move down for the next error
+            errorY += textHeight + 5;
+
+            // Clean up
+            SDL_FreeSurface(errorSurface);
+            SDL_DestroyTexture(errorTexture);
+        }
+
+
+        // --- Render top menu items ---
+        // "File" (just as an example)
+        {
+            SDL_Surface *fileSurface = TTF_RenderText_Blended(font, "File", textColor);
+            SDL_Texture *fileTexture = SDL_CreateTextureFromSurface(renderer, fileSurface);
+            SDL_Rect fileRect = {10, 10, fileSurface->w, fileSurface->h};
+            SDL_RenderCopy(renderer, fileTexture, nullptr, &fileRect);
+            SDL_FreeSurface(fileSurface);
+            SDL_DestroyTexture(fileTexture);
+        }
+
+        // "Edit" (just as an example)
+        {
+            SDL_Surface *editSurface = TTF_RenderText_Blended(font, "Edit", textColor);
+            SDL_Texture *editTexture = SDL_CreateTextureFromSurface(renderer, editSurface);
+            SDL_Rect editRect = {60, 10, editSurface->w, editSurface->h};
+            SDL_RenderCopy(renderer, editTexture, nullptr, &editRect);
+            SDL_FreeSurface(editSurface);
+            SDL_DestroyTexture(editTexture);
+        }
+
+        // "View"
+        {
+            SDL_Surface *viewSurface = TTF_RenderText_Blended(font, viewText.c_str(), textColor);
+            SDL_Texture *viewTexture = SDL_CreateTextureFromSurface(renderer, viewSurface);
+            SDL_Rect viewRect = {60 + 50, 10, viewSurface->w, viewSurface->h};
+            SDL_RenderCopy(renderer, viewTexture, nullptr, &viewRect);
+            SDL_FreeSurface(viewSurface);
+            SDL_DestroyTexture(viewTexture);
+        }
+
+        // "debug and compile" (just as an example)
+        {
+            SDL_Surface *fileSurface = TTF_RenderText_Blended(font, "Debug & Compile", textColor);
+            SDL_Texture *fileTexture = SDL_CreateTextureFromSurface(renderer, fileSurface);
+            SDL_Rect fileRect = {160, 10, fileSurface->w, fileSurface->h};
+            SDL_RenderCopy(renderer, fileTexture, nullptr, &fileRect);
+            SDL_FreeSurface(fileSurface);
+            SDL_DestroyTexture(fileTexture);
+        }
+
+        // "run" (just as an example)
+        {
+            SDL_Surface *fileSurface = TTF_RenderText_Blended(font, "Run", textColor);
+            SDL_Texture *fileTexture = SDL_CreateTextureFromSurface(renderer, fileSurface);
+            SDL_Rect fileRect = {300, 10, fileSurface->w, fileSurface->h};
+            SDL_RenderCopy(renderer, fileTexture, nullptr, &fileRect);
+            SDL_FreeSurface(fileSurface);
+            SDL_DestroyTexture(fileTexture);
+        }
+
+        // If the menu is visible, render the menu options for View
+        if (ViewMenuVisible) {
+            SDL_SetRenderDrawColor(renderer, navarcolor, navarcolor, navarcolor, 255);  // Light gray color
+            SDL_Rect grayBackgroundRect = {140, 35, 120, 80}; // Position it below the top menu
+            SDL_RenderFillRect(renderer, &grayBackgroundRect);
+
+            SDL_Surface *lightModeSurface = TTF_RenderText_Blended(font, lightModeText.c_str(), textColor);
+            SDL_Texture *lightModeTexture = SDL_CreateTextureFromSurface(renderer, lightModeSurface);
+            SDL_Rect lightModeRect = {150, 40, lightModeSurface->w, lightModeSurface->h};
+            SDL_RenderCopy(renderer, lightModeTexture, nullptr, &lightModeRect);
+            SDL_FreeSurface(lightModeSurface);
+            SDL_DestroyTexture(lightModeTexture);
+
+            SDL_Surface *darkModeSurface = TTF_RenderText_Blended(font, darkModeText.c_str(), textColor);
+            SDL_Texture *darkModeTexture = SDL_CreateTextureFromSurface(renderer, darkModeSurface);
+            SDL_Rect darkModeRect = {150, 80, darkModeSurface->w, darkModeSurface->h};
+            SDL_RenderCopy(renderer, darkModeTexture, nullptr, &darkModeRect);
+            SDL_FreeSurface(darkModeSurface);
+            SDL_DestroyTexture(darkModeTexture);
+
+        }
+
+        //file menu
+        if (FileMenuVisible) {
+            SDL_SetRenderDrawColor(renderer, navarcolor, navarcolor, navarcolor, 255);  // Light gray color
+            SDL_Rect grayBackgroundRect = {10, 35, 120, 120}; // Position it below the top menu
+            SDL_RenderFillRect(renderer, &grayBackgroundRect);
+
+            SDL_Surface *newprojectSurface= TTF_RenderText_Blended(font, newprojectText.c_str(), textColor);
+            SDL_Texture *newprojectTexture = SDL_CreateTextureFromSurface(renderer, newprojectSurface);
+            SDL_Rect newprojectRect = {20, 40, newprojectSurface->w, newprojectSurface->h};
+            SDL_RenderCopy(renderer, newprojectTexture, nullptr, &newprojectRect);
+            SDL_FreeSurface(newprojectSurface);
+            SDL_DestroyTexture(newprojectTexture);
+
+            SDL_Surface *saveprojectSurface = TTF_RenderText_Blended(font, saveprojectText.c_str(), textColor);
+            SDL_Texture *saveprojectTexture = SDL_CreateTextureFromSurface(renderer, saveprojectSurface);
+            SDL_Rect saveprojectRect = {20, 80, saveprojectSurface->w, saveprojectSurface->h};
+            SDL_RenderCopy(renderer, saveprojectTexture, nullptr, &saveprojectRect);
+            SDL_FreeSurface(saveprojectSurface);
+            SDL_DestroyTexture(saveprojectTexture);
+
+            SDL_Surface *exitSurface = TTF_RenderText_Blended(font, exitText.c_str(), textColor);
+            SDL_Texture *exitTexture = SDL_CreateTextureFromSurface(renderer, exitSurface);
+            SDL_Rect exitRect = {20, 120, exitSurface->w, exitSurface->h};
+            SDL_RenderCopy(renderer, exitTexture, nullptr, &exitRect);
+            SDL_FreeSurface(exitSurface);
+            SDL_DestroyTexture(exitTexture);
+
+        }
+
+
 
         // Present the updated rendering on the screen
         SDL_RenderPresent(renderer);
@@ -317,6 +768,7 @@ int main(int argc, char* argv[]) {
 
     // Cleanup
     TTF_CloseFont(font);
+    TTF_CloseFont(codefont);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     TTF_Quit();
