@@ -311,22 +311,31 @@ struct ProjectInfo {
 };
 
 vector <ProjectInfo> savedProjects;
-bool saveProject (const string &projectName, const vector <string> &lines)
-{
+bool saveProject(const string &projectName, const vector<string> &lines) {
     string filePath = projectName + ".cpp";
 
-    ifstream checkfile(filePath);
-    if (checkfile.good())
-        return false;
+    ofstream outputFile(filePath, ios::trunc);
+    if (!outputFile) return false;
 
-    ofstream outputFile(filePath);
-    if (!outputFile)
-        return false;
-
-    for (const string& line: lines)
-        outputFile << line << endl;
+    for (const string& line : lines)
+        outputFile << line << "\n";
 
     outputFile.close();
+
+    ifstream inFile("projects.txt");
+    set<string> existingProjects;
+    string line;
+    while(getline(inFile, line)) {
+        existingProjects.insert(line);
+    }
+    inFile.close();
+
+    if(existingProjects.find(projectName) == existingProjects.end()) {
+        ofstream outFile("projects.txt", ios::app);
+        outFile << projectName << "\n";
+        outFile.close();
+    }
+
     return true;
 }
 
@@ -709,30 +718,30 @@ int main(int argc, char* argv[]) {
                 int mouseX = e.button.x;
                 int mouseY = e.button.y;
 
-                for (auto& project : savedProjects) {
-                    if (mouseX >= project.rect.x &&
-                        mouseX <= project.rect.x + project.rect.w &&
-                        mouseY >= project.rect.y &&
-                        mouseY <= project.rect.y + project.rect.h) {
+                if (!FileMenuVisible)
+                {
+                    for (auto& project : savedProjects) {
+                        if (mouseX >= project.rect.x &&
+                            mouseX <= project.rect.x + project.rect.w &&
+                            mouseY >= project.rect.y &&
+                            mouseY <= project.rect.y + project.rect.h) {
 
-                        lines.clear();
-                        currentLine = 0;
-                        cursorPos = 0;
-
-                        ifstream file(project.filePath);
-                        if (file.is_open()) {
-                            string line;
-                            while (getline(file, line)) {
-                                lines.push_back(line);
+                            ifstream file(project.filePath);
+                            if (file.is_open()) {
+                                lines.clear();
+                                string line;
+                                while (getline(file, line)) {
+                                    lines.push_back(line);
+                                }
+                                file.close();
+                                currentLine = 0;
+                                cursorPos = 0;
+                            } else {
+                                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error",
+                                                         ("Failed to open project: " + project.name).c_str(), window);
                             }
-                            file.close();
 
-                            break;
-                        } else {
-                            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error",
-                                                     ("Failed to open project: " + project.name).c_str(), window);
                         }
-
                     }
                 }
 
@@ -880,10 +889,10 @@ int main(int argc, char* argv[]) {
             };
 
             savedProjects[i].rect = {
-                    ProjectPanel.x + destRect.x - 5,
-                    ProjectPanel.y + destRect.y - 5,
-                    destRect.w + 10,
-                    destRect.h + 10
+                    15,
+                    startY + (itemHeight * int(i)) - 5,
+                    surface->w + 10,
+                    surface->h + 10
             };
 
             SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
@@ -946,32 +955,16 @@ int main(int argc, char* argv[]) {
             string projectName;
             if (showSaveDialog(projectName, textCol)) {
                 if (saveProject(projectName, lines)) {
-                    bool exists = false;
-                    for (auto& p : savedProjects) {
-                        if (p.name == projectName) {
-                            p.filePath = projectName + ".cpp";
-                            exists = true;
-                            break;
-                        }
-                    }
-                    if (!exists) {
                         ProjectInfo newProject;
                         newProject.name = projectName;
                         newProject.filePath = projectName + ".cpp";
                         newProject.rect = {0, 0, 0, 0};
                         savedProjects.push_back(newProject);
-
-                        ofstream file("projects.txt", ios::app);
-                        if (file.is_open()) {
-                            file << projectName << endl;
-                            file.close();
-                        }
-                    }
-
                     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION,
                                              "Success",
                                              "Project saved successfully",
                                              window);
+                    loadProjectsList();
                 } else {
                     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Warning", "Error: Project with this name already exists.", window);
                 }
