@@ -1,7 +1,6 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL2_gfx.h>
-#include <SDL2/SDL2_gfxPrimitives.h>
 #include <string>
 #include <iostream>
 #include <vector>
@@ -11,13 +10,14 @@
 #include <regex>
 #include <algorithm>
 #include <unordered_set>
+#include <fstream>
 
 using namespace std;
 
 // Screen dimensions
-const int SCREEN_WIDTH = 1920;
-const int SCREEN_HEIGHT = 960;
-const int ERROR_PANEL_HEIGHT = 200;  // Height of the error panel at the bottom
+const int SCREEN_WIDTH = 1280;
+const int SCREEN_HEIGHT = 640;
+const int ERROR_PANEL_HEIGHT = 100;  // Height of the error panel at the bottom
 
 
 // Ensure the current line is visible when adding new lines or moving the cursor
@@ -300,7 +300,194 @@ void checkCodeErrors(const string& code, const vector<string>& availableFunction
 }
 
 
+//------------------
+//---Save Project---
+//------------------
 
+struct ProjectInfo {
+    string name;
+    string filePath;
+    SDL_Rect rect;
+};
+
+vector <ProjectInfo> savedProjects;
+bool saveProject (const string &projectName, const vector <string> &lines)
+{
+    string filePath = projectName + ".cpp";
+
+    ifstream checkfile(filePath);
+    if (checkfile.good())
+        return false;
+
+    ofstream outputFile(filePath);
+    if (!outputFile)
+        return false;
+
+    for (const string& line: lines)
+        outputFile << line << endl;
+
+    outputFile.close();
+    return true;
+}
+
+bool showSaveDialog(string& projectName, Uint8 textCol) {
+    const int WINDOW_WIDTH = 300;
+    const int WINDOW_HEIGHT = 150;
+
+    SDL_Window* window = SDL_CreateWindow("Save Project", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+    if (!window) {
+        cerr << "Save Window could not be created! SDL_Error: " << SDL_GetError() << endl;
+        return false;
+    }
+
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (!renderer) {
+        cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << endl;
+        SDL_DestroyWindow(window);
+        return false;
+    }
+
+    TTF_Font* font = TTF_OpenFont("C:\\Windows\\Fonts\\Calibri.ttf", 20); // Use a fallback font
+    if (!font) {
+        cerr << "Failed to load font! TTF_Error: " << TTF_GetError() << endl;
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        return false;
+    }
+    TTF_Font* font2 = TTF_OpenFont("C:\\Windows\\Fonts\\Calibri.ttf", 18); // Use a fallback font
+
+    bool dialogActive = true;
+    SDL_Event e;
+    projectName.clear();
+    string inputText;
+
+    // UI element coordinates (relative to window size)
+    SDL_Rect dialogBox = {10, 10, WINDOW_WIDTH - 20, WINDOW_HEIGHT - 20};
+    SDL_Rect inputBox = {20, 50, WINDOW_WIDTH - 40, 30};
+    SDL_Rect cancelButton = {50, 90, 80, 30};
+    SDL_Rect saveButton = {170, 90, 80, 30};
+    SDL_Color textColor = {textCol, textCol, textCol, 255};
+
+    // Render "Enter Project Name:" text
+    SDL_Surface* messageSurface = TTF_RenderText_Blended(font, "Enter Project Name:", textColor);
+    if (!messageSurface) {
+        cerr << "Failed to create message surface! TTF_Error: " << TTF_GetError() << endl;
+        TTF_CloseFont(font);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        return false;
+    }
+    SDL_Texture* messageTexture = SDL_CreateTextureFromSurface(renderer, messageSurface);
+    SDL_Rect messageRect = {20, 20, messageSurface->w, messageSurface->h};
+    SDL_FreeSurface(messageSurface);
+
+    SDL_Color buttonColor = {255, 255, 255, 255};
+
+    SDL_Surface* saveSurface = TTF_RenderText_Blended(font2, "Save", buttonColor);
+    SDL_Texture* saveTexture = SDL_CreateTextureFromSurface(renderer, saveSurface);
+    SDL_Rect saveRect = {193, 96, saveSurface->w, saveSurface->h};
+    SDL_FreeSurface(saveSurface);
+
+    SDL_Surface* cancelSurface = TTF_RenderText_Blended(font2, "Cancel", buttonColor);
+    SDL_Texture* cancelTexture = SDL_CreateTextureFromSurface(renderer, cancelSurface);
+    SDL_Rect cancelRect = {65, 96, cancelSurface->w, cancelSurface->h};
+    SDL_FreeSurface(cancelSurface);
+
+    while (dialogActive) {
+        // Clear background
+        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+        SDL_RenderClear(renderer);
+
+        // Draw dialog box
+        SDL_SetRenderDrawColor(renderer, 180, 180, 180, 255);
+        SDL_RenderFillRect(renderer, &dialogBox);
+
+        // Draw input box
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderFillRect(renderer, &inputBox);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderDrawRect(renderer, &inputBox);
+
+        // Draw buttons
+        SDL_SetRenderDrawColor(renderer, 0, 128, 0, 255);
+        SDL_RenderFillRect(renderer, &saveButton);
+        SDL_RenderCopy(renderer, saveTexture, nullptr, &saveRect);
+
+        SDL_SetRenderDrawColor(renderer, 128, 0, 0, 255);
+        SDL_RenderFillRect(renderer, &cancelButton);
+        SDL_RenderCopy(renderer, cancelTexture, nullptr, &cancelRect);
+
+        // Render text
+        SDL_RenderCopy(renderer, messageTexture, nullptr, &messageRect);
+
+        // Render input text
+        if (!inputText.empty()) {
+            SDL_Surface* inputSurface = TTF_RenderText_Blended(font, inputText.c_str(), textColor);
+            SDL_Texture* inputTexture = SDL_CreateTextureFromSurface(renderer, inputSurface);
+            SDL_Rect inputRect = {inputBox.x + 5, inputBox.y + 5, inputSurface->w, inputSurface->h};
+            SDL_RenderCopy(renderer, inputTexture, nullptr, &inputRect);
+            SDL_FreeSurface(inputSurface);
+            SDL_DestroyTexture(inputTexture);
+        }
+
+        // Handle events
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                dialogActive = false;
+                projectName.clear();
+                return false;
+            } else if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.sym == SDLK_RETURN) {
+                    projectName = inputText;
+                    dialogActive = false;
+                } else if (e.key.keysym.sym == SDLK_BACKSPACE && !inputText.empty()) {
+                    inputText.pop_back();
+                }
+            } else if (e.type == SDL_TEXTINPUT) {
+                inputText += e.text.text;
+            } else if (e.type == SDL_MOUSEBUTTONDOWN) {
+                int mouseX = e.button.x;
+                int mouseY = e.button.y;
+
+                if (mouseX >= saveButton.x && mouseX <= saveButton.x + saveButton.w &&
+                    mouseY >= saveButton.y && mouseY <= saveButton.y + saveButton.h) {
+                    projectName = inputText;
+                    dialogActive = false;
+                } else if (mouseX >= cancelButton.x && mouseX <= cancelButton.x + cancelButton.w &&
+                           mouseY >= cancelButton.y && mouseY <= cancelButton.y + cancelButton.h) {
+                    dialogActive = false;
+                    projectName.clear();
+                }
+            }
+        }
+
+        SDL_RenderPresent(renderer);
+    }
+
+    // Cleanup
+    SDL_DestroyTexture(messageTexture);
+    TTF_CloseFont(font);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+
+    return !projectName.empty();
+}
+
+void loadProjectsList()
+{
+    ifstream file("projects.txt");
+    string line;
+    savedProjects.clear();
+    while(getline(file, line))
+    {
+        ProjectInfo project;
+        project.name = line;
+        project.filePath = line + ".cpp";
+        project.rect = {0, 0, 0, 0};
+        savedProjects.push_back(project);
+    }
+    file.close();
+}
 
 
 int main(int argc, char* argv[]) {
@@ -394,6 +581,7 @@ int main(int argc, char* argv[]) {
     const Uint32 CURSOR_BLINK_INTERVAL = 500; // ms
     bool quit = false;
     SDL_Event e;
+    loadProjectsList();
 
     while (!quit) {
         // Clear screen
@@ -427,6 +615,10 @@ int main(int argc, char* argv[]) {
             cursorVisible = !cursorVisible;
             lastCursorToggle = currentTime;
         }
+
+        //Saving Project
+        bool saveProjectButtonPressed = false;
+        string projectNameInput = "";
 
         // Event loop
         while (SDL_PollEvent(&e) != 0) {
@@ -517,6 +709,33 @@ int main(int argc, char* argv[]) {
                 int mouseX = e.button.x;
                 int mouseY = e.button.y;
 
+                for (auto& project : savedProjects) {
+                    if (mouseX >= project.rect.x &&
+                        mouseX <= project.rect.x + project.rect.w &&
+                        mouseY >= project.rect.y &&
+                        mouseY <= project.rect.y + project.rect.h) {
+
+                        lines.clear();
+                        currentLine = 0;
+                        cursorPos = 0;
+
+                        ifstream file(project.filePath);
+                        if (file.is_open()) {
+                            string line;
+                            while (getline(file, line)) {
+                                lines.push_back(line);
+                            }
+                            file.close();
+
+                            break;
+                        } else {
+                            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error",
+                                                     ("Failed to open project: " + project.name).c_str(), window);
+                        }
+
+                    }
+                }
+
                 // Click on "View" button region?
                 if (mouseX >= 110 && mouseX <= 110 + 50 && mouseY < 40) {
                     ViewMenuVisible = !ViewMenuVisible;  // Toggle the visibility of the menu
@@ -525,6 +744,18 @@ int main(int argc, char* argv[]) {
                 //file button
                 if (mouseX >= 10 && mouseX <= 50 && mouseY < 40) {
                     FileMenuVisible = !FileMenuVisible;  // Toggle the visibility of the menu
+                }
+
+                if (FileMenuVisible)
+                {
+                    if (mouseX >= 20 && mouseX <= 200)
+                    {
+                        if (mouseY <= 120 && mouseY >= 80)
+                        {
+                            saveProjectButtonPressed = true;
+                            projectNameInput = "";
+                        }
+                    }
                 }
 
                 // If the View menu is open, check clicks on Light/Dark
@@ -542,16 +773,18 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        Uint8 navarcolor;
+        Uint8 navarcolor, textCol;
         // Set the background color based on the current mode
         if (isDarkMode) {
             SDL_SetRenderDrawColor(renderer, darkBackgroundColor.r, darkBackgroundColor.g, darkBackgroundColor.b, 255);
             textColor = darkTextColor;
             navarcolor = 50;
+            textCol = 255;
         } else {
             SDL_SetRenderDrawColor(renderer, lightBackgroundColor.r, lightBackgroundColor.g, lightBackgroundColor.b, 255);
             textColor = lightTextColor;
             navarcolor = 180;
+            textCol = 0;
         }
         SDL_RenderClear(renderer);
 
@@ -623,10 +856,48 @@ int main(int argc, char* argv[]) {
             y += LINE_HEIGHT; // Move to the next line
         }
 
-        //Nemudar Derakhti Stuff
+        //--------------------
+        //---Projects Panel---
+        //--------------------
+
         SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);  // Red color for the error panel
         SDL_Rect ProjectPanel = {0, 35, 200, SCREEN_HEIGHT};
         SDL_RenderFillRect(renderer, &ProjectPanel);
+
+        int startY = 50;
+        int itemHeight = 30;
+
+        for (size_t i = 0; i < savedProjects.size(); i++)
+        {
+            SDL_Surface* surface = TTF_RenderText_Blended(font, savedProjects[i].name.c_str(), {255, 255, 255, 255});
+            SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+
+            SDL_Rect destRect = {
+                    20,
+                    startY + (itemHeight * int(i)),
+                    surface->w,
+                    surface->h
+            };
+
+            savedProjects[i].rect = {
+                    ProjectPanel.x + destRect.x - 5,
+                    ProjectPanel.y + destRect.y - 5,
+                    destRect.w + 10,
+                    destRect.h + 10
+            };
+
+            SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
+            SDL_RenderFillRect(renderer, &savedProjects[i].rect);
+
+            SDL_SetRenderDrawColor(renderer, 120, 120, 120, 255);
+            SDL_RenderDrawRect(renderer, &savedProjects[i].rect);
+
+            SDL_RenderCopy(renderer, texture, NULL, &destRect);
+
+            SDL_FreeSurface(surface);
+            SDL_DestroyTexture(texture);
+        }
+
 
 
         //-----------------
@@ -667,6 +938,47 @@ int main(int argc, char* argv[]) {
             SDL_RenderCopy(renderer, fileTexture, nullptr, &fileRect);
             SDL_FreeSurface(fileSurface);
             SDL_DestroyTexture(fileTexture);
+        }
+
+        if (saveProjectButtonPressed)
+        {
+            FileMenuVisible = false;
+            string projectName;
+            if (showSaveDialog(projectName, textCol)) {
+                if (saveProject(projectName, lines)) {
+                    bool exists = false;
+                    for (auto& p : savedProjects) {
+                        if (p.name == projectName) {
+                            p.filePath = projectName + ".cpp";
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        ProjectInfo newProject;
+                        newProject.name = projectName;
+                        newProject.filePath = projectName + ".cpp";
+                        newProject.rect = {0, 0, 0, 0};
+                        savedProjects.push_back(newProject);
+
+                        ofstream file("projects.txt", ios::app);
+                        if (file.is_open()) {
+                            file << projectName << endl;
+                            file.close();
+                        }
+                    }
+
+                    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION,
+                                             "Success",
+                                             "Project saved successfully",
+                                             window);
+                } else {
+                    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Warning", "Error: Project with this name already exists.", window);
+                }
+            } else {
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Info", "Save operation was canceled.", window);
+            }
+            saveProjectButtonPressed = false;
         }
 
         // "Edit" (just as an example)
