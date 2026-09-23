@@ -1,0 +1,14 @@
+# build folders
+cmake-build-*/
+build/
+
+# CLion
+.idea/
+
+# old stuff that is not part of the project
+_old/
+
+# files the IDE makes when it runs
+projects.txt
+temp_project.cpp
+*.exe
